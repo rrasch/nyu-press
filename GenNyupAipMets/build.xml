@@ -1,0 +1,104 @@
+<?xml version="1.0"?>
+
+<project name="GenNyupAipMets" default="dist" basedir=".">
+
+  <!-- set global properties for this build -->
+  <property name="src"       value="src"/>
+  <property name="build"     value="bin"/>
+  <property name="lib"       value="lib"/>
+  <property name="dist"      value="lib"/>
+  <property name="conf"      value="conf"/>
+  <property name="jarname"   value="gennyupaipmets.jar"/>
+  <property name="jar"       value="${dist}/${jarname}"/>
+  <property name="docs"      value="docs"/>
+  <property name="include"   value="${lib}"/>
+  <property name="package"   value="edu.nyu.dlib.nyup"/>
+  <property name="runclass"  value="${package}.GenNyupAipMets"/>
+
+  <target name="init">
+    <!-- Create the time stamp -->
+    <tstamp>
+      <format property="timestamp" pattern="yyyyMMdd-HHmmss-z"/>
+    </tstamp>
+    <!-- Create the build directory structure used by compile -->
+    <mkdir dir="${build}"/>
+    <!-- Create the directory for the java docs -->
+    <mkdir dir="${docs}"/>
+
+    <copy todir="${build}">
+      <fileset file="${conf}/log4j.properties"/>
+    </copy>
+
+    <!-- Define the classpaths -->
+    <path id="compile.classpath">
+      <!-- include all jar files  -->
+      <fileset dir="${include}">
+        <include name="**/*.jar"/>
+	<exclude name="**/${jarname}"/>
+      </fileset>
+    </path>
+    <path id="run.classpath">
+      <path refid="compile.classpath"/>
+      <pathelement path="${build}"/>
+    </path>
+    <pathconvert property="tmp.classpath"
+                 dirsep="/"
+                 pathsep=" "
+                 refid="compile.classpath">
+      <map from="${basedir}${file.separator}lib${file.separator}" to=""/>
+    </pathconvert>
+    <property name="jar.classpath" value="${tmp.classpath} ."/>
+  </target>
+
+  <target name="compile" depends="init">
+    <!-- Compile the java code -->
+    <javac srcdir="${src}" destdir="${build}" includeantruntime="false">
+      <classpath refid="compile.classpath"/>
+      <compilerarg line="-Xlint:unchecked -Werror"/>
+    </javac>
+  </target>
+
+  <target name="docs" depends="compile">
+    <!-- create javadocs -->
+    <javadoc packagenames="${package}.*"
+             sourcepath="${build}"
+             defaultexcludes="yes"
+             destdir="${docs}"
+             author="true"
+             version="true"
+             use="true"
+             windowtitle="GenNyupAipMets Documentation Version: ${version}">
+     </javadoc>
+  </target>
+
+  <target name="run" depends="compile">
+    <!-- run the class -->
+    <java classname="${runclass}">
+      <classpath refid="run.classpath"/>
+    </java>
+  </target>
+
+  <target name="dist" depends="compile"
+        description="generate the distribution" >
+
+    <!-- Create the distribution directory -->
+    <mkdir dir="${dist}"/>
+
+    <property name="buildid" value="${timestamp} (${user.name} [${os.name} ${os.version} ${os.arch}])"/>
+
+    <!-- Put everything in ${build} into the ${jar} file -->
+    <jar jarfile="${jar}" basedir="${build}">
+      <manifest>
+        <attribute name="Main-Class" value="${runclass}"/>
+        <attribute name="Class-Path" value="${jar.classpath}"/>
+        <attribute name="Build-Id" value="${buildid}"/>
+      </manifest>
+    </jar>
+  </target>
+
+  <target name="clean" description="clean up">
+    <!-- Delete the ${build} directory tree -->
+    <delete dir="${build}"/>
+  </target>
+
+</project>

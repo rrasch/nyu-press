@@ -1,0 +1,237 @@
+#!/bin/bash
+#
+# Convert pdfs to pdf/a's.
+#
+# Author: Rasan Rasch <rasan@nyu.edu>
+
+# PDFBOX_VERSION=1.8.2
+PDFBOX_VERSION=2.0.0-SNAPSHOT
+
+# GS=gs-8.71
+# GS=gs
+GS=/usr/local/ghostscript-9.07/bin/gs
+
+JAVA="java -Xms512m -Xmx512m"
+JAVAC="javac"
+
+EXTRA_GS_ARGS=""
+
+PS_DEF_FILES="pdfmarks"
+
+set -e
+# set -x
+
+echoerr()
+{
+	echo "$@" 1>&2
+}
+
+usage()
+{ 
+	echoerr -e "\nUsage: $0 [-s] <input_pdf> [<output_pdfa>]\n"
+}
+
+while getopts "hs" opt; do
+	case $opt in
+		h)
+			usage
+			exit
+			;;
+		s)
+			echoerr "skipping pdf/a validation."
+			SKIP_VALIDATION=1
+			;;
+	esac
+done
+shift $((OPTIND-1))
+
+if [ $# -lt 1 ]; then
+	usage
+	exit 1
+fi
+
+INPUT_FILE=$1
+
+if [ $# -eq 1 ]; then
+	OUTPUT_FILE="${INPUT_FILE}a"
+else
+	OUTPUT_FILE=$2
+fi
+
+echoerr "input file: '$INPUT_FILE'"
+echoerr "output file: '$OUTPUT_FILE'"
+
+if [ -f "$OUTPUT_FILE" ]; then
+	echoerr "$OUTPUT_FILE already exists."
+	exit
+fi
+
+PROG=`readlink -f $0`
+
+APPHOME=`dirname $PROG`
+
+FAILED_LIST="$APPHOME/FAILED.txt"
+
+function write_failed()
+{
+	if [ ! -f "$OUTPUT_FILE" ]; then
+		echo "$INPUT_FILE" >> "$FAILED_LIST"
+	fi
+}
+
+tmpdir=${TMPDIR:-/tmp}/pdf2pfda.$$
+
+# trap "rm -rf $tmpdir; write_failed; exit" EXIT
+trap "" SIGHUP
+trap "rm -rf $tmpdir; exit" EXIT SIGINT SIGQUIT SIGTERM
+mkdir $tmpdir || exit 1
+
+ORIG_FILE="$tmpdir/`basename \"$INPUT_FILE\"`.orig"
+
+FIXED_ANNOT_FILE="$tmpdir/`basename \"$INPUT_FILE\"`.annot"
+
+PDFA_TMPFILE="$tmpdir/`basename \"$OUTPUT_FILE\"`.pdfa"
+
+FIXED_META_FILE="$tmpdir/`basename \"$OUTPUT_FILE\"`.meta"
+
+SIZE=`du -m "$INPUT_FILE" | awk '{ print $1 }'`
+echoerr "Filesize: ${SIZE}M"
+
+if [ "$SIZE" -gt 300 ]; then
+	echoerr -n "Warning: '$INPUT_FILE' may be too big "
+	echoerr    "(${SIZE}M) to test validation"
+fi
+
+MIMETYPE=`file -bi "$INPUT_FILE" | cut -d\; -f1`
+
+case "$MIMETYPE" in
+	image/jpeg)
+		imgext=jpg
+		;;
+	image/vnd.adobe.photoshop)
+		imgext=psd
+		;;
+	application/octet-stream)
+		echoerr "File '$INPUT_FILE' is not a pdf ... exiting"
+		exit 1
+		;;
+	*)
+		imgext=""
+		;;
+esac
+
+echoerr "Mimetype: $MIMETYPE"
+
+if [ -n "$imgext" ]; then
+	IMG_FILE="$tmpdir/`basename \"$INPUT_FILE\"`.$imgext"
+	cp "$INPUT_FILE" "$IMG_FILE"
+	convert "$IMG_FILE[0]" "pdf:$ORIG_FILE"
+else
+	cp "$INPUT_FILE" "$ORIG_FILE"
+fi
+
+case "$INPUT_FILE" in
+	*Cover\ PDF*|*Print\ PDF*)
+		ICC_FILE=USWebCoatedSWOP.icc
+		;;
+	*Universal*)
+# 		ICC_FILE=eciRGB_v2.icc
+		ICC_FILE=USWebCoatedSWOP.icc
+		;;
+esac
+
+# COLORSPACE=`identify -format '%[colorspace]' "$ORIG_FILE"`
+COLORSPACE=`pdfimages -list "$ORIG_FILE" | tail -n +3 \
+	| awk '{ print $3, $6 }' \
+	| grep image \
+	| awk '{ print $2 }' | sort | uniq -c \
+	| sort -n | tail -1 | awk '{ print toupper($2) }'`
+echoerr "Mosty frequently used colorspace: $COLORSPACE"
+
+if [ -z "$ICC_FILE" ]; then
+	case "$COLORSPACE" in
+		CMYK|GRAY|INDEX)
+			ICC_FILE=USWebCoatedSWOP.icc
+			;;
+		DEVN|RGB)
+			ICC_FILE=eciRGB_v2.icc
+			;;
+		*)
+			ICC_FILE=eciRGB_v2.icc
+			;;
+	esac
+fi
+
+GS_VERSION=`$GS -v | head -1  | sed 's/.*Ghostscript \([^ ]*\).*$/\1/'`
+
+CLASSPATH=$APPHOME/pdfbox/pdfbox-$PDFBOX_VERSION.jar
+CLASSPATH=$CLASSPATH:$APPHOME/pdfbox/pdfbox-app-$PDFBOX_VERSION.jar
+CLASSPATH=$CLASSPATH:$APPHOME/pdfbox/fontbox-$PDFBOX_VERSION.jar
+CLASSPATH=$CLASSPATH:$APPHOME/pdfbox/jempbox-$PDFBOX_VERSION.jar
+CLASSPATH=$CLASSPATH:$APPHOME/pdfbox/commons-logging-1.1.1.jar
+CLASSPATH=$CLASSPATH:$APPHOME
+
+JAVA="$JAVA -cp $CLASSPATH"
+JAVAC="$JAVAC -cp $CLASSPATH"
+
+set +e
+echoerr "Fixing print flags for annotations ..."
+$JAVA FixPrintFlag "$ORIG_FILE" "$FIXED_ANNOT_FILE"
+set -e
+
+if [ ! -f "$FIXED_ANNOT_FILE" ]; then
+	echoerr "Fix operation failed. Running pdftk to repair ..."
+# 	cp -v "$ORIG_FILE" "$FIXED_ANNOT_FILE"
+	pdftk "$ORIG_FILE" output "$FIXED_ANNOT_FILE"
+fi
+
+if [ -n "$ICC_FILE" ]; then
+	PDFA_DEF_FILE="$tmpdir/PDFA_def.ps"
+	sed "s,<ICC_FILE>,$APPHOME/$ICC_FILE,g" \
+		< $APPHOME/PDFA_def.ps.tmpl \
+		> $PDFA_DEF_FILE
+	PS_DEF_FILES="$PS_DEF_FILES $PDFA_DEF_FILE"
+fi
+
+set -x
+$GS \
+	-q \
+	-dPDFA \
+	-dBATCH \
+	-dNOPAUSE \
+	-dNOOUTERSAVE \
+	-dUseCIEColor \
+	-sProcessColorModel=DeviceCMYK \
+	-sDEVICE=pdfwrite \
+	-dPDFACompatibilityPolicy=1 \
+	-sOutputFile="$PDFA_TMPFILE" \
+	-sGhostscriptVersion="Ghostscript $GS_VERSION" \
+	-sMyColorProfile="$ICC_FILE" \
+	$EXTRA_GS_ARGS \
+	$PS_DEF_FILES \
+	"$FIXED_ANNOT_FILE"
+set +x
+
+perl -pi -e 's/&#0;/    /g' "$PDFA_TMPFILE"
+
+# $JAVAC FixMetadata.java
+set +e
+$JAVA FixMetadata "$PDFA_TMPFILE" "$FIXED_META_FILE"
+set -e
+
+if [ ! -f "$FIXED_META_FILE" ]; then
+	echoerr "Failed to fix metadata ... doing plain copy"
+	cp -v "$PDFA_TMPFILE" "$FIXED_META_FILE"
+fi
+
+# perl -pi -e 's/rdf:Alt>/rdf:Seq>/g' "$FIXED_META_FILE"
+
+# $JAVA FontInfo "$FIXED_META_FILE"
+
+if [ "$SKIP_VALIDATION" != "1" ]; then
+	echoerr "Validating '$FIXED_META_FILE' ..."
+	$APPHOME/validate-pdfa.sh "$FIXED_META_FILE"
+fi
+
+mv -v "$FIXED_META_FILE" "$OUTPUT_FILE"
+

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mets:mets xmlns="http://www.loc.gov/METS/" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.loc.gov/METS/ http://www.loc.gov/standards/mets/version191/mets.xsd" xmlns:mets="http://www.loc.gov/METS/"
+  OBJID="<AIP_ROOT>" LABEL="urn:isbn:<ISBN>">
+  <?AIPTemplate version="info:nyu/dl/v1.0/templates/aip/v1.0.1"?>
+  <mets:metsHdr CREATEDATE="<CREATE_DATE>" LASTMODDATE="<CREATE_DATE>">
+    <mets:agent ROLE="CREATOR" TYPE="INDIVIDUAL">
+      <mets:name>Rasch, Rasan</mets:name>
+    </mets:agent>
+    <mets:agent ROLE="CREATOR" TYPE="ORGANIZATION">
+      <mets:name>NYU DLTS</mets:name>
+    </mets:agent>
+  </mets:metsHdr>
+  <mets:amdSec>
+    <mets:rightsMD ID="aip-rmd">
+      <mdRef LOCTYPE="URL" MDTYPE="METSRIGHTS" CHECKSUM="<METS_RIGHTS_CHECKSUM>" CHECKSUMTYPE="SHA-1" xlink:href="<AIP_ROOT>-aip-rights.xml"/>
+    </mets:rightsMD>
+  </mets:amdSec>
+  <mets:fileSec>
+    <mets:fileGrp>
+      <mets:file ID="file-0" CHECKSUM="<METS_AIP_CHECKSUM>" CHECKSUMTYPE="SHA-1">
+        <mets:FLocat LOCTYPE="URL" xlink:href="<AIP_ROOT>-<AIP_VERSION>.xml"/>
+      </mets:file>
+    </mets:fileGrp>
+  </mets:fileSec>
+  <mets:structMap>
+    <mets:div>
+      <mets:div ORDER="1" LABEL="ACTIVE">
+        <mets:fptr FILEID="file-0"/>
+      </mets:div>
+    </mets:div>
+  </mets:structMap>
+</mets:mets>
